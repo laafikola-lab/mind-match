@@ -1,87 +1,47 @@
-import { supabase } from "../lib/supabaseClient";
-import { useEffect, useState } from "react";
-import { supabase } from "../lib/supabaseClient";
+// pages/api/swipe.js
+import { supabase } from "../../lib/supabaseClient";
 
-export default function SwipePage() {
-  const [user, setUser] = useState(null);
-  const [profiles, setProfiles] = useState([]);
-  const [loading, setLoading] = useState(true);
+export default async function handler(req, res) {
+  if (req.method !== "POST") return res.status(405).end();
 
-  // Load logged in user
-  useEffect(() => {
-    async function loadUser() {
-      const { data } = await supabase.auth.getUser();
-      if (!data.user) {
-        window.location.href = "/login";
-        return;
-      }
-      setUser(data.user);
-      loadProfiles(data.user.id);
-    }
-    loadUser();
-  }, []);
-
-  // Load other profiles
-  async function loadProfiles(myId) {
-    let { data, error } = await supabase
-      .from("profiles")
-      .select("*")
-      .neq("id", myId);
-
-    if (error) {
-      alert("Error loading profiles");
-      return;
+  try {
+    const { targetId, action } = req.body;
+    if (!targetId || !["like", "pass"].includes(action)) {
+      return res.status(400).json({ error: "Invalid input" });
     }
 
-    setProfiles(data);
-    setLoading(false);
-  }
+    const { data: sessionData } = await supabase.auth.getSession();
+    const session = sessionData?.session;
+    if (!session?.user) return res.status(401).json({ error: "Not signed in" });
 
-  async function swipe(targetId, liked) {
-    const { error } = await supabase.from("swipes").insert([
-      {
-        swiper_id: user.id,
-        target_id: targetId,
-        liked,
-      },
+    const swiperId = session.user.id;
+
+    // Insert the swipe
+    const { error: insertErr } = await supabase.from("swipes").insert([
+      { swiper_id: swiperId, target_id: targetId, action }
     ]);
-    if (error) alert("Swipe error");
+    if (insertErr) return res.status(500).json({ error: insertErr.message });
 
-    setProfiles((prev) => prev.slice(1)); // remove first card
+    // If like, check reciprocal like and create match (server-side)
+    if (action === "like") {
+      const { data: reciprocal, error: recErr } = await supabase
+        .from("swipes")
+        .select("*")
+        .eq("swiper_id", targetId)
+        .eq("target_id", swiperId)
+        .eq("action", "like")
+        .limit(1);
+
+      if (!recErr && reciprocal && reciprocal.length > 0) {
+        // create ordered pair (user_a < user_b)
+        const [a, b] = [swiperId, targetId].sort();
+        await supabase.from("matches").insert([{ user_a: a, user_b: b }]);
+      }
+    }
+
+    return res.status(200).json({ success: true });
+  } catch (err) {
+    console.error("swipe error:", err);
+    return res.status(500).json({ error: "Server error" });
   }
-
-  if (loading) return <h2>Loading...</h2>;
-
-  if (profiles.length === 0)
-    return <h2>No more profiles right now 🚀</h2>;
-
-  const p = profiles[0];
-
-  return (
-    <div style={{ padding: 40 }}>
-      <h1>Discover</h1>
-      <div
-        style={{
-          padding: 20,
-          border: "1px solid #ccc",
-          width: 300,
-          marginBottom: 20,
-        }}
-      >
-        <h3>{p.full_name}</h3>
-        <p><b>Role:</b> {p.role}</p>
-        <p><b>Skills:</b> {p.skills?.join(", ")}</p>
-        <p><b>Looking for:</b> {p.looking_for?.join(", ")}</p>
-        <p><b>Bio:</b> {p.bio}</p>
-      </div>
-
-      <button
-        style={{ marginRight: 20 }}
-        onClick={() => swipe(p.id, false)}
-      >
-        ❌ Pass
-      </button>
-      <button onClick={() => swipe(p.id, true)}>❤️ Like</button>
-    </div>
-  );
 }
