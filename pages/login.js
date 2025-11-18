@@ -1,6 +1,6 @@
 // pages/login.js
 import { useState, useEffect } from 'react'
-import { supabase } from '../lib/supabase'
+import { supabase } from '../lib/supabaseClient'
 import { useRouter } from 'next/router'
 
 export default function Login({ session }) {

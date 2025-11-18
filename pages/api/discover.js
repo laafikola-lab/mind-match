@@ -1,5 +1,5 @@
 // pages/api/discover.js
-import { supabase } from '../../lib/supabase'
+import { supabase } from '../../lib/supabaseClient'
 
 export default async function handler(req, res) {
   const { data: sessionData } = await supabase.auth.getSession()

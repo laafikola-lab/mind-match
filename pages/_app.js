@@ -1,6 +1,6 @@
 // pages/_app.js
 import { useEffect, useState } from 'react'
-import { supabase } from '../lib/supabase'
+import { supabase } from '../lib/supabaseClient'
 import { useRouter } from 'next/router'
 
 export default function App({ Component, pageProps }) {
