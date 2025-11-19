@@ -1,28 +1,33 @@
 // pages/api/discover.js
-import { supabase } from '../../lib/supabaseClient'
+import { supabase } from '../../lib/supabaseClient';
 
 export default async function handler(req, res) {
-  const { data: sessionData } = await supabase.auth.getSession()
-  const session = sessionData?.session
+  try {
+    // Get the currently logged-in user from the Supabase auth cookie
+    const {
+      data: { user },
+      error: userError,
+    } = await supabase.auth.getUser();
 
-  if (!session?.user) return res.status(401).json({ error: 'Not signed in' })
+    if (userError || !user) {
+      return res.status(401).json({ error: 'Not signed in' });
+    }
 
-  const authId = session.user.id
+    // For now: just return *all other* profiles, no fancy matching
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('*')
+      .neq('auth_id', user.id)          // everyone except me
+      .order('created_at', { ascending: false });
 
-  // exclude yourself and exclude users you've already swiped on
-  const { data: swiped } = await supabase
-    .from('swipes')
-    .select('target_id')
-    .eq('swiper_id', authId)
+    if (error) {
+      console.error('discover error:', error);
+      return res.status(500).json({ error: error.message });
+    }
 
-  const excluded = (swiped || []).map(s => s.target_id).concat([authId])
-
-  const { data, error } = await supabase
-    .from('profiles')
-    .select('auth_id, full_name, role, skills, looking_for, bio, commitment')
-    .not('auth_id', 'in', `(${excluded.map(e => `'${e}'`).join(',')})`)
-    .limit(40)
-
-  if (error) return res.status(500).json({ error: error.message })
-  return res.status(200).json({ profiles: data || [] })
+    return res.status(200).json({ profiles: data || [] });
+  } catch (err) {
+    console.error('discover exception:', err);
+    return res.status(500).json({ error: err.message || 'Unexpected error' });
+  }
 }
